@@ -137,6 +137,10 @@ export default function AuthPage() {
         auth: false,
       });
 
+      // ✅ store temporarily ONLY for OTP page "Edit email" -> re-signup
+      sessionStorage.setItem("sr_pending_pw", regPw);
+      sessionStorage.setItem("sr_pending_email", email);
+
       // ✅ go to OTP page directly
       nav(`/verify-email?email=${encodeURIComponent(email)}`);
     } catch (e2) {
@@ -147,7 +151,7 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-white selection:text-black">
+    <div className="min-h-screen bg-black text-white selection:bg-white selection:text-black flex flex-col">
       <Header
         right={
           <div className="hidden sm:block text-xs text-white/60">
@@ -174,9 +178,12 @@ export default function AuthPage() {
               <Button variant="ghost" onClick={onGoogleContinue} type="button">
                 Continue with Google
               </Button>
-              <Button variant="ghost" onClick={onPasskeyLogin} type="button">
-                Use Passkey
-              </Button>
+
+              {tab === "login" && (
+                <Button variant="ghost" onClick={onPasskeyLogin} type="button">
+                  Use Passkey
+                </Button>
+              )}
             </div>
 
             <div className="mt-6 h-px bg-white/10" />

@@ -25,3 +25,4 @@ dist-ssr
 
 # Avoid Text Files
 *.txt
+dump-react-code.ps1
