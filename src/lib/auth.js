@@ -1,11 +1,22 @@
-const KEY = "wg_token";
+import {
+  getAccess,
+  getRefresh,
+  clearTokens,
+  setTokens,
+  setUserEmail,
+} from "./storage";
 
-export function setToken(token) {
-  localStorage.setItem(KEY, token);
+export function setTokenPair({ access_token, refresh_token, email }) {
+  setTokens({ access_token, refresh_token });
+  if (email) setUserEmail(email);
 }
+
+// Used by <PrivateRoute />
 export function getToken() {
-  return localStorage.getItem(KEY);
+  // allow either access OR refresh (since refresh can auto-rotate access)
+  return getAccess() || getRefresh();
 }
+
 export function clearToken() {
-  localStorage.removeItem(KEY);
+  clearTokens();
 }
