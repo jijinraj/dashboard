@@ -10,6 +10,8 @@ import { api } from "../lib/api";
 
 import Header from "../components/layout/Header";
 import Footer from "../components/layout/Footer";
+import Card from "../components/ui/Card";
+
 import LocationsPanel from "../components/dashboard/LocationsPanel";
 import CreateConfigPanel from "../components/dashboard/CreateConfigPanel";
 import PeersTable from "../components/dashboard/PeersTable";
@@ -32,6 +34,24 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
+  // ✅ beta approval gate
+  const [betaBlocked, setBetaBlocked] = useState(false);
+
+  function isBetaApprovalError(e) {
+    // const msg = String(e?.message || "").toLowerCase();
+    // return (
+    //   msg.includes("not approved for beta") ||
+    //   msg.includes("not approved") ||
+    //   msg.includes("beta")
+    // );
+    return (
+      e?.status === 403 &&
+      String(e?.message || "")
+        .toLowerCase()
+        .includes("beta")
+    );
+  }
+
   function logout() {
     clearToken();
     nav("/login");
@@ -39,10 +59,20 @@ export default function DashboardPage() {
 
   async function boot() {
     setErr("");
-    await loadPeers();
-    const locs = await loadLocations();
-    if (!selectedLocation && locs.length) setSelectedLocation(locs[0].id);
-    await refreshLatencies(locs);
+    setBetaBlocked(false);
+
+    try {
+      await loadPeers(); // may 403 if not beta approved
+      const locs = await loadLocations();
+      if (!selectedLocation && locs.length) setSelectedLocation(locs[0].id);
+      await refreshLatencies(locs);
+    } catch (e) {
+      if (isBetaApprovalError(e)) {
+        setBetaBlocked(true);
+        return;
+      }
+      throw e;
+    }
   }
 
   useEffect(() => {
@@ -51,19 +81,31 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (betaBlocked) return;
     if (!selectedLocation) return;
+
     loadServerInfo(selectedLocation)
       .then(setServerInfo)
-      .catch((e) => setErr(e.message));
+      .catch((e) => {
+        if (isBetaApprovalError(e)) {
+          setBetaBlocked(true);
+          return;
+        }
+        setErr(e.message);
+      });
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedLocation]);
+  }, [selectedLocation, betaBlocked]);
 
   useEffect(() => {
+    if (betaBlocked) return;
     if (!locations.length) return;
+
     const id = setInterval(() => refreshLatencies(locations), 30000);
     return () => clearInterval(id);
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locations]);
+  }, [locations, betaBlocked]);
 
   async function createPeer() {
     if (!serverInfo || !selectedLocation) return;
@@ -100,6 +142,10 @@ export default function DashboardPage() {
       await loadPeers();
       setName("My Device");
     } catch (e) {
+      if (isBetaApprovalError(e)) {
+        setBetaBlocked(true);
+        return;
+      }
       setErr(e.message);
     } finally {
       setLoading(false);
@@ -112,6 +158,26 @@ export default function DashboardPage() {
     try {
       await deletePeer(peerId);
     } catch (e) {
+      if (isBetaApprovalError(e)) {
+        setBetaBlocked(true);
+        return;
+      }
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onRefreshPeers() {
+    setErr("");
+    setLoading(true);
+    try {
+      await loadPeers();
+    } catch (e) {
+      if (isBetaApprovalError(e)) {
+        setBetaBlocked(true);
+        return;
+      }
       setErr(e.message);
     } finally {
       setLoading(false);
@@ -123,13 +189,17 @@ export default function DashboardPage() {
       <Header
         right={
           <>
-            <button
-              type="button"
-              onClick={() => loadPeers().catch((e) => setErr(e.message))}
-              className="inline-flex items-center justify-center rounded-md border border-white/15 bg-transparent px-3 py-2 text-sm font-semibold text-white hover:bg-white/[0.05]"
-            >
-              Refresh
-            </button>
+            {!betaBlocked && (
+              <button
+                type="button"
+                onClick={onRefreshPeers}
+                disabled={loading}
+                className="inline-flex items-center justify-center rounded-md border border-white/15 bg-transparent px-3 py-2 text-sm font-semibold text-white hover:bg-white/[0.05] disabled:opacity-60"
+              >
+                Refresh
+              </button>
+            )}
+
             <button
               type="button"
               onClick={logout}
@@ -142,31 +212,76 @@ export default function DashboardPage() {
       />
 
       <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 space-y-8">
-        {err && (
-          <div className="rounded-2xl border border-white/15 bg-white/[0.05] p-4 text-sm text-white">
-            {err}
+        {betaBlocked ? (
+          <div className="mx-auto max-w-xl">
+            <Card>
+              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                Waiting for beta approval
+              </h1>
+              <p className="mt-2 text-sm leading-relaxed text-white/70">
+                You are logged in, but your account is still pending beta
+                approval. Once an admin approves you, you’ll be able to create
+                and manage VPN configs here.
+              </p>
+
+              {err && (
+                <div className="mt-6 rounded-2xl border border-white/15 bg-white/[0.05] p-4 text-sm text-white">
+                  {err}
+                </div>
+              )}
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => boot().catch((e) => setErr(e.message))}
+                  className="inline-flex items-center justify-center rounded-md border border-white/15 bg-transparent px-3 py-2 text-sm font-semibold text-white hover:bg-white/[0.05]"
+                >
+                  Check again
+                </button>
+
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="inline-flex items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-black hover:bg-white/90"
+                >
+                  Logout
+                </button>
+              </div>
+            </Card>
           </div>
+        ) : (
+          <>
+            {err && (
+              <div className="rounded-2xl border border-white/15 bg-white/[0.05] p-4 text-sm text-white">
+                {err}
+              </div>
+            )}
+
+            <LocationsPanel
+              locations={locations}
+              latency={latency}
+              latencyLoading={latencyLoading}
+              onRefreshLatency={() => refreshLatencies(locations)}
+            />
+
+            <CreateConfigPanel
+              name={name}
+              setName={setName}
+              locations={locations}
+              selectedLocation={selectedLocation}
+              setSelectedLocation={setSelectedLocation}
+              loading={loading}
+              serverInfoReady={!!serverInfo}
+              onCreate={createPeer}
+            />
+
+            <PeersTable
+              peers={peers}
+              loading={loading}
+              onDelete={onDeletePeer}
+            />
+          </>
         )}
-
-        <LocationsPanel
-          locations={locations}
-          latency={latency}
-          latencyLoading={latencyLoading}
-          onRefreshLatency={() => refreshLatencies(locations)}
-        />
-
-        <CreateConfigPanel
-          name={name}
-          setName={setName}
-          locations={locations}
-          selectedLocation={selectedLocation}
-          setSelectedLocation={setSelectedLocation}
-          loading={loading}
-          serverInfoReady={!!serverInfo}
-          onCreate={createPeer}
-        />
-
-        <PeersTable peers={peers} loading={loading} onDelete={onDeletePeer} />
       </main>
 
       <Footer />

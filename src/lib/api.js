@@ -123,7 +123,11 @@ export async function api(path, { method = "GET", body, auth = "auto" } = {}) {
       (out && typeof out === "object" && out.detail) ||
       (typeof out === "string" && out) ||
       `${res.status} ${res.statusText}`;
-    throw new Error(msg);
+
+    const err = new Error(msg);
+    err.status = res.status;
+    err.body = out;
+    throw err;
   }
 
   return out;
